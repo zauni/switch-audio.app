@@ -1,18 +1,20 @@
 use std::{
   mem,
   ptr::{null, NonNull},
+  sync::mpsc::Sender,
 };
 
 use coreaudio::{
   audio_unit::{macos_helpers, Scope},
-  Error,
+  Error, OSStatus,
 };
 use objc2_core_audio::{
   kAudioDevicePropertyMute, kAudioHardwarePropertyDefaultInputDevice,
   kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyElementMain,
   kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyScopeInput, kAudioObjectSystemObject,
-  AudioDeviceID, AudioObjectGetPropertyData, AudioObjectGetPropertyDataSize, AudioObjectID,
-  AudioObjectPropertyAddress, AudioObjectSetPropertyData,
+  AudioDeviceID, AudioObjectAddPropertyListener, AudioObjectGetPropertyData,
+  AudioObjectGetPropertyDataSize, AudioObjectID, AudioObjectPropertyAddress,
+  AudioObjectPropertyListenerProc, AudioObjectRemovePropertyListener, AudioObjectSetPropertyData,
 };
 use serde::Serialize;
 
@@ -227,5 +229,96 @@ pub fn set_current_device(device_id: AudioDeviceID, input: bool) -> Result<(), S
   match result {
     Ok(_) => Ok(()),
     Err(e) => Err(format!("Failed to set device: {:?}", e)),
+  }
+}
+
+/// A CurrentDeviceListener can be used to get notified when the current device is changed.
+pub struct CurrentDeviceListener {
+  sync_channel: Sender<AudioDeviceID>,
+  property_address: AudioObjectPropertyAddress,
+  current_device_listener: AudioObjectPropertyListenerProc,
+}
+
+impl Drop for CurrentDeviceListener {
+  fn drop(&mut self) {
+    let _ = self.unregister();
+  }
+}
+
+impl CurrentDeviceListener {
+  /// Create a new CurrentDeviceListener.
+  /// You have to provide a `std::sync::mpsc::Sender` so that events will be pushed to that channel.
+  /// The listener must be registered by calling `register()` in order to start receiving notifications.
+  pub fn new(sync_channel: Sender<AudioDeviceID>) -> CurrentDeviceListener {
+    // Add our sample rate change listener callback.
+    let property_address = AudioObjectPropertyAddress {
+      mSelector: kAudioHardwarePropertyDefaultInputDevice,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain,
+    };
+    CurrentDeviceListener {
+      sync_channel,
+      property_address,
+      current_device_listener: None,
+    }
+  }
+
+  /// Register this listener to receive notifications.
+  pub fn register(&mut self) -> Result<(), Error> {
+    unsafe extern "C-unwind" fn current_device_listener(
+      _device_id: AudioObjectID,
+      _n_addresses: u32,
+      _properties: NonNull<AudioObjectPropertyAddress>,
+      self_ptr: *mut ::std::os::raw::c_void,
+    ) -> OSStatus {
+      let self_ptr: &mut CurrentDeviceListener = &mut *(self_ptr as *mut CurrentDeviceListener);
+      let mut current_device_id: AudioDeviceID = 0;
+      let data_size = mem::size_of::<AudioDeviceID>() as u32;
+      let property_address: AudioObjectPropertyAddress = AudioObjectPropertyAddress {
+        mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain,
+      };
+      let result = AudioObjectGetPropertyData(
+        kAudioObjectSystemObject as AudioObjectID,
+        NonNull::from(&property_address),
+        0,
+        null(),
+        NonNull::from(&data_size),
+        NonNull::from(&mut current_device_id).cast(),
+      );
+      let _ = &self_ptr.sync_channel.send(current_device_id).unwrap();
+      result
+    }
+
+    // Add our change listener callback.
+    let status = unsafe {
+      AudioObjectAddPropertyListener(
+        kAudioObjectSystemObject as AudioObjectID,
+        NonNull::from(&self.property_address),
+        Some(current_device_listener),
+        self as *const _ as *mut _,
+      )
+    };
+    Error::from_os_status(status)?;
+    self.current_device_listener = Some(current_device_listener);
+    Ok(())
+  }
+
+  /// Unregister this listener to stop receiving notifications.
+  pub fn unregister(&mut self) -> Result<(), Error> {
+    if self.current_device_listener.is_some() {
+      let status = unsafe {
+        AudioObjectRemovePropertyListener(
+          kAudioObjectSystemObject as AudioObjectID,
+          NonNull::from(&self.property_address),
+          self.current_device_listener,
+          self as *const _ as *mut _,
+        )
+      };
+      Error::from_os_status(status)?;
+      self.current_device_listener = None;
+    }
+    Ok(())
   }
 }

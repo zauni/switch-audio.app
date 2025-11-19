@@ -35,8 +35,7 @@ export async function initTray() {
           // accelerator: "CommandOrControl+Shift+C",
           action: async () => {
             try {
-              const newDevice = await toggleAudioDevice();
-              await updateIcon(newDevice);
+              await toggleAudioDevice();
             } catch (error) {
               console.error("Error toggling audio device:", error);
             }
@@ -87,8 +86,5 @@ export async function initTray() {
   listen<Device>("input-device-changed", async (evt) => {
     console.log("input-device-changed event received", evt.payload);
     await updateIcon(evt.payload);
-  });
-  listen<Device>("output-device-changed", async (evt) => {
-    console.log("output-device-changed event received", evt.payload);
   });
 }

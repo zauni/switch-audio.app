@@ -2,12 +2,16 @@
 
 pub mod audio_helper;
 
-use std::time::Duration;
+use std::{
+  sync::{mpsc, Mutex},
+  thread,
+};
 
 use objc2_core_audio::AudioDeviceID;
 use tauri::Emitter;
+use tauri::Manager;
 
-use crate::audio_helper::AudioDevice;
+use crate::audio_helper::{create_device, AudioDevice, CurrentDeviceListener};
 
 #[tauri::command]
 fn get_device_list() -> Vec<AudioDevice> {
@@ -33,22 +37,42 @@ fn get_current_device(input: bool) -> Option<AudioDevice> {
   audio_helper::get_current_device(input)
 }
 
+struct ListenerState {
+  listener: Mutex<Option<Box<CurrentDeviceListener>>>,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(ListenerState {
+      listener: Mutex::new(None),
+    })
     .setup(|app| {
-      let handle: tauri::AppHandle = app.handle().clone();
-      let mut current_input_device = audio_helper::get_current_device(true).unwrap();
-      std::thread::spawn(move || loop {
-        if audio_helper::get_current_device(true).is_some() {
-          let device = audio_helper::get_current_device(true).unwrap();
-          if device.id != current_input_device.id {
-            handle.emit("input-device-changed", device.clone()).unwrap();
-            current_input_device = device;
-          }
+      let handle = app.handle().clone();
+      let (sender, receiver) = mpsc::channel();
+
+      // Store the listener in state so it doesn't get dropped
+      let mut listener = Box::new(CurrentDeviceListener::new(sender));
+      listener.register()?;
+      handle
+        .state::<ListenerState>()
+        .listener
+        .lock()
+        .unwrap()
+        .replace(listener);
+
+      thread::spawn(move || {
+        while let Ok(new_device_id) = receiver.recv() {
+          println!(
+            "Received input device change event for device ID: {:?}",
+            new_device_id
+          );
+          handle
+            .emit("input-device-changed", create_device(new_device_id))
+            .unwrap();
         }
-        std::thread::sleep(Duration::from_secs(10));
       });
+
       Ok(())
     })
     // .setup(|app| {
