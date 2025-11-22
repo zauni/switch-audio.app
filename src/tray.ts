@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   IconMenuItem,
   Menu,
-  NativeIcon,
+  MenuItem,
   PredefinedMenuItem,
 } from "@tauri-apps/api/menu";
 import { TrayIcon } from "@tauri-apps/api/tray";
@@ -20,18 +20,37 @@ export async function initTray() {
   const headsetImage = await resolveResource("assets/headset.png");
   const laptopMutedImage = await resolveResource("assets/laptop-muted.png");
   const laptopImage = await resolveResource("assets/laptop.png");
+  const micMutedImage = await resolveResource("assets/mic-muted.png");
+  const micImage = await resolveResource("assets/mic.png");
+  const switchImage = await resolveResource("assets/switch.png");
+
+  const muteMenuItem = await IconMenuItem.new({
+    icon: micMutedImage,
+    id: "mute",
+    text: "Mute",
+    action: async () => {
+      try {
+        await toggleMute();
+      } catch (error) {
+        console.error("Error muting audio device:", error);
+      }
+    },
+  });
+
+  const currentDeviceMenuItem = await MenuItem.new({
+    id: "current-device",
+    text: "Aktuelles Gerät: ...",
+    enabled: false,
+  });
 
   const tray = await TrayIcon.new({
-    // `icon` expects a base64 string or a path relative to the `src-tauri` folder
-    icon: laptopImage,
     tooltip: "Switch Audio",
-    iconAsTemplate: true, // for macOS dark mode support
     menu: await Menu.new({
       items: [
         await IconMenuItem.new({
-          icon: NativeIcon.Refresh,
+          icon: switchImage,
           id: "toggle-audio",
-          text: "Toggle Audio Device",
+          text: "Audio-Gerät wechseln",
           // accelerator: "CommandOrControl+Shift+C",
           action: async () => {
             try {
@@ -41,22 +60,12 @@ export async function initTray() {
             }
           },
         }),
-        await IconMenuItem.new({
-          icon: NativeIcon.InvalidDataFreestanding,
-          id: "mute",
-          text: "Mute/Unmute",
-          action: async () => {
-            try {
-              await toggleMute();
-            } catch (error) {
-              console.error("Error muting audio device:", error);
-            }
-          },
-        }),
+        muteMenuItem,
         await PredefinedMenuItem.new({
           text: "separator-text",
           item: "Separator",
         }),
+        currentDeviceMenuItem,
         await PredefinedMenuItem.new({
           text: "Beenden",
           item: "Quit",
@@ -66,6 +75,7 @@ export async function initTray() {
   });
 
   const updateIcon = async () => {
+    console.log("Updating tray icon...");
     const device = await invoke<Device>("get_current_device", {
       input: true,
     });
@@ -75,6 +85,11 @@ export async function initTray() {
     }
     await tray.setIcon(icon);
     await tray.setIconAsTemplate(true);
+
+    await muteMenuItem.setIcon(device.isMuted ? micImage : micMutedImage);
+    await muteMenuItem.setText(device.isMuted ? "Aktivieren" : "Stummschalten");
+
+    await currentDeviceMenuItem.setText(`Aktuelles Gerät: ${device.name}`);
   };
 
   console.log(await invoke<Device[]>("get_device_list"));

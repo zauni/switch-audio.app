@@ -35,7 +35,10 @@
       "assets/headset-muted.png",
       "assets/headset.png",
       "assets/laptop-muted.png",
-      "assets/laptop.png"
+      "assets/laptop.png",
+      "assets/mic-muted.png",
+      "assets/mic.png",
+      "assets/switch.png"
     ],
     "macOS": {
       "signingIdentity": "Apple Development: Matthias Zaunseder (GT5FA8J4LF)",

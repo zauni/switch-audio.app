@@ -11,6 +11,7 @@
 - Remove window
 - Remove unused stuff
 - Support bluetooth device `Pro X 2`
+- Multi-Language support
 
 # Long Term Goals
 
