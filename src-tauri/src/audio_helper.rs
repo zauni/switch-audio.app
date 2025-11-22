@@ -18,7 +18,7 @@ use objc2_core_audio::{
 };
 use serde::Serialize;
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub enum AudioDeviceType {
   #[serde(rename = "input")]
   Input,
@@ -318,6 +318,87 @@ impl CurrentDeviceListener {
       };
       Error::from_os_status(status)?;
       self.current_device_listener = None;
+    }
+    Ok(())
+  }
+}
+
+/// A MuteListener can be used to get notified when the current input device is muted or unmuted.
+pub struct MuteListener {
+  device_id: AudioDeviceID,
+  sync_channel: Sender<AudioDevice>,
+  property_address: AudioObjectPropertyAddress,
+  mute_listener: AudioObjectPropertyListenerProc,
+}
+
+impl Drop for MuteListener {
+  fn drop(&mut self) {
+    let _ = self.unregister();
+  }
+}
+
+impl MuteListener {
+  /// Create a new MuteListener.
+  /// You have to provide a `std::sync::mpsc::Sender` so that events will be pushed to that channel.
+  /// The listener must be registered by calling `register()` in order to start receiving notifications.
+  pub fn new(device_id: AudioDeviceID, sync_channel: Sender<AudioDevice>) -> MuteListener {
+    let property_address = AudioObjectPropertyAddress {
+      mSelector: kAudioDevicePropertyMute,
+      mScope: kAudioObjectPropertyScopeInput,
+      mElement: kAudioObjectPropertyElementMain,
+    };
+    MuteListener {
+      device_id,
+      sync_channel,
+      property_address,
+      mute_listener: None,
+    }
+  }
+
+  /// Register this listener to receive notifications.
+  pub fn register(&mut self) -> Result<(), Error> {
+    unsafe extern "C-unwind" fn mute_listener(
+      device_id: AudioObjectID,
+      _n_addresses: u32,
+      _properties: NonNull<AudioObjectPropertyAddress>,
+      self_ptr: *mut ::std::os::raw::c_void,
+    ) -> OSStatus {
+      let self_ptr: &mut MuteListener = &mut *(self_ptr as *mut MuteListener);
+
+      let device = create_device(device_id);
+      let _ = self_ptr.sync_channel.send(device).unwrap();
+
+      // Return `noErr` to indicate success.
+      0
+    }
+
+    // Add our change listener callback.
+    let status = unsafe {
+      AudioObjectAddPropertyListener(
+        self.device_id,
+        NonNull::from(&self.property_address),
+        Some(mute_listener),
+        self as *const _ as *mut _,
+      )
+    };
+    Error::from_os_status(status)?;
+    self.mute_listener = Some(mute_listener);
+    Ok(())
+  }
+
+  /// Unregister this listener to stop receiving notifications.
+  pub fn unregister(&mut self) -> Result<(), Error> {
+    if self.mute_listener.is_some() {
+      let status = unsafe {
+        AudioObjectRemovePropertyListener(
+          self.device_id,
+          NonNull::from(&self.property_address),
+          self.mute_listener,
+          self as *const _ as *mut _,
+        )
+      };
+      Error::from_os_status(status)?;
+      self.mute_listener = None;
     }
     Ok(())
   }

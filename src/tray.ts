@@ -47,9 +47,7 @@ export async function initTray() {
           text: "Mute/Unmute",
           action: async () => {
             try {
-              const currentDevice = await toggleMute();
-
-              await updateIcon(currentDevice);
+              await toggleMute();
             } catch (error) {
               console.error("Error muting audio device:", error);
             }
@@ -67,24 +65,27 @@ export async function initTray() {
     }),
   });
 
-  const updateIcon = async (device: Device) => {
-    let icon = device?.isMuted ? laptopMutedImage : laptopImage;
-    if (device?.name === "PRO X 2 LIGHTSPEED") {
-      icon = device?.isMuted ? headsetMutedImage : headsetImage;
+  const updateIcon = async () => {
+    const device = await invoke<Device>("get_current_device", {
+      input: true,
+    });
+    let icon = device.isMuted ? laptopMutedImage : laptopImage;
+    if (device.name === "PRO X 2 LIGHTSPEED") {
+      icon = device.isMuted ? headsetMutedImage : headsetImage;
     }
     await tray.setIcon(icon);
     await tray.setIconAsTemplate(true);
   };
 
   console.log(await invoke<Device[]>("get_device_list"));
-  const currentDevice = await invoke<Device>("get_current_device", {
-    input: true,
+
+  await updateIcon();
+
+  listen("input-device-changed", async () => {
+    await updateIcon();
   });
 
-  await updateIcon(currentDevice);
-
-  listen<Device>("input-device-changed", async (evt) => {
-    console.log("input-device-changed event received", evt.payload);
-    await updateIcon(evt.payload);
+  listen("mute-changed", async () => {
+    await updateIcon();
   });
 }
