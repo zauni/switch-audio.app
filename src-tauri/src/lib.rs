@@ -124,35 +124,7 @@ pub fn run() {
 
       Ok(())
     })
-    // .setup(|app| {
-    //   #[cfg(desktop)]
-    //   {
-    //     use tauri_plugin_global_shortcut::{
-    //       Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
-    //     };
-    //     let ctrl_n_shortcut = Shortcut::new(Some(Modifiers::FN), Code::KeyM);
-    //     app.handle().plugin(
-    //       tauri_plugin_global_shortcut::Builder::new()
-    //         .with_handler(move |_app, shortcut, event| {
-    //           println!("{:?}", shortcut);
-    //           if shortcut == &ctrl_n_shortcut {
-    //             match event.state() {
-    //               ShortcutState::Pressed => {
-    //                 println!("CapsLock-M Pressed!");
-    //               }
-    //               ShortcutState::Released => {
-    //                 println!("CapsLock-M Released!");
-    //               }
-    //             }
-    //           }
-    //         })
-    //         .build(),
-    //     )?;
-    //     app.global_shortcut().register(ctrl_n_shortcut)?;
-    //   }
-    //   Ok(())
-    // })
-    // .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+    .plugin(tauri_plugin_global_shortcut::Builder::new().build())
     .plugin(tauri_plugin_opener::init())
     .invoke_handler(tauri::generate_handler![
       get_current_device,

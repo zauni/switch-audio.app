@@ -8,13 +8,16 @@ import {
 } from "@tauri-apps/api/menu";
 import { TrayIcon } from "@tauri-apps/api/tray";
 import { toggleAudioDevice, toggleMute, type Device } from "./audio-helper";
-// import { register } from "@tauri-apps/plugin-global-shortcut";
+import { register } from "@tauri-apps/plugin-global-shortcut";
 import { resolveResource } from "@tauri-apps/api/path";
 
 export async function initTray() {
-  // await register("Function+M", () => {
-  //   console.log("Shortcut triggered");
-  // });
+  await register("CommandOrControl+Shift+N", (evt) => {
+    if (evt.state === "Pressed") toggleAudioDevice();
+  });
+  await register("CommandOrControl+Shift+M", (evt) => {
+    if (evt.state === "Pressed") toggleMute();
+  });
 
   const headsetMutedImage = await resolveResource("assets/headset-muted.png");
   const headsetImage = await resolveResource("assets/headset.png");
@@ -28,13 +31,8 @@ export async function initTray() {
     icon: micMutedImage,
     id: "mute",
     text: "Mute",
-    action: async () => {
-      try {
-        await toggleMute();
-      } catch (error) {
-        console.error("Error muting audio device:", error);
-      }
-    },
+    accelerator: "CommandOrControl+Shift+M",
+    action: toggleMute,
   });
 
   const currentDeviceMenuItem = await MenuItem.new({
@@ -51,14 +49,8 @@ export async function initTray() {
           icon: switchImage,
           id: "toggle-audio",
           text: "Audio-Gerät wechseln",
-          // accelerator: "CommandOrControl+Shift+C",
-          action: async () => {
-            try {
-              await toggleAudioDevice();
-            } catch (error) {
-              console.error("Error toggling audio device:", error);
-            }
-          },
+          accelerator: "CommandOrControl+Shift+N",
+          action: toggleAudioDevice,
         }),
         muteMenuItem,
         await PredefinedMenuItem.new({
@@ -75,7 +67,6 @@ export async function initTray() {
   });
 
   const updateIcon = async () => {
-    console.log("Updating tray icon...");
     const device = await invoke<Device>("get_current_device", {
       input: true,
     });
